@@ -1,6 +1,6 @@
 """
 analyzer.py - DDR generation via Google Gemini REST API
-Uses v1 (stable) endpoint with current model names.
+Uses v1beta endpoint (required for thinkingConfig and 2.5 models).
 """
 
 import json
@@ -10,7 +10,7 @@ import urllib.error
 from typing import Dict, List, Any
 
 # Current confirmed model names as of 2025/2026
-# Using v1 (stable) API endpoint, not v1beta
+# v1beta required: thinkingConfig is a beta feature not in stable v1
 MODELS = [
     "gemini-2.5-flash-lite",   # Same price as 2.0-flash, not deprecated, supports thinking
     "gemini-2.5-flash",        # Fallback: better quality, higher cost
@@ -152,7 +152,7 @@ def call_gemini(
     thermal_image_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Call Google Gemini REST API (v1, stable).
+    Call Google Gemini REST API (v1beta, supports thinkingConfig).
     Tries multiple current model names with full error reporting.
     """
     prompt = build_prompt(inspection_text, thermal_text)
@@ -172,10 +172,10 @@ def call_gemini(
     raw = None
 
     for model in MODELS:
-        # Use v1 (stable) endpoint
+        # v1beta endpoint: required for thinkingConfig + 2.5 models
         url = (
             f"https://generativelanguage.googleapis.com"
-            f"/v1/models/{model}:generateContent?key={api_key}"
+            f"/v1beta/models/{model}:generateContent?key={api_key}"
         )
         req = urllib.request.Request(
             url,
