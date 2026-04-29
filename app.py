@@ -242,14 +242,14 @@ if generate_btn and ready:
         from extractor import get_images_as_gemini_parts
         _, selected_inspection_imgs = get_images_as_gemini_parts(inspection_data["images"])
         _, selected_thermal_imgs = get_images_as_gemini_parts(thermal_data["images"])
-        
-        # Combine: thermal first (higher priority), then inspection
+
+        # All images — no cap. Images are embedded in HTML report only,
+        # not sent to the LLM, so there is no token cost for including all of them.
+        # Thermal first (pages 1-N), then inspection photos.
         selected_all = selected_thermal_imgs + selected_inspection_imgs
-        # Hard cap at 12 images total to stay within free tier limits
-        selected_all = selected_all[:12]
-        
+
         selected_ids = {img["id"] for img in selected_all}
-        st.caption(f"🖼️ {len(selected_all)} images selected for AI analysis (thermal: {len(selected_thermal_imgs)}, inspection: {len(selected_inspection_imgs)})")
+        st.caption(f"🖼️ {len(selected_all)} images extracted (thermal: {len(selected_thermal_imgs)}, inspection: {len(selected_inspection_imgs)}) — all embedded in report")
         
         progress_bar.progress(55)
         
