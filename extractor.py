@@ -98,25 +98,23 @@ def build_image_map(images: List[Dict]) -> Dict[str, Dict]:
 
 def get_images_as_gemini_parts(images: List[Dict]) -> List[Dict]:
     """
-    Convert image records into Gemini API-compatible inline_data parts.
-    Caps at 20 images to stay within API limits (select the most relevant ones).
+    Return all extracted images sorted by page order.
+    Images are not sent to the LLM — they are embedded directly
+    in the HTML report by the renderer. No cap needed.
     """
-    # Prioritize larger images (more likely to be content photos vs decorators)
-    sorted_images = sorted(images, key=lambda x: x["width"] * x["height"], reverse=True)
-    
-    # Cap at 8 to stay within free-tier token limits
-    selected = sorted_images[:8]
-    
+    # Sort by page order so renderer distributes them correctly
+    sorted_images = sorted(images, key=lambda x: x.get("page", 0))
+
     parts = []
-    for img in selected:
+    for img in sorted_images:
         parts.append({
             "inline_data": {
                 "mime_type": img["mime"],
                 "data": img["b64"],
             },
-            "_img_id": img["id"],  # for internal tracking
+            "_img_id": img["id"],
             "_page": img["page"],
             "_source": img["source"],
         })
-    
-    return parts, selected
+
+    return parts, sorted_images
