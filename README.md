@@ -4,8 +4,8 @@
 
 **Built for:** UrbanRoof Applied AI Builder Assignment  
 **Stack:** Python · Streamlit · PyMuPDF · Google Gemini API (v1beta REST)  
-**Live demo:** [your-app.streamlit.app](https://your-app.streamlit.app)  
-**Author:** [Your Name]
+**Live demo:** [Link](https://ai-report-generator-01.streamlit.app/)  
+**Author:** [Harshita Saraogi]
 
 ---
 
@@ -501,4 +501,4 @@ Early versions truncated input text to `inspection_text[:7000]` and `thermal_tex
 
 ---
 
-*Built as part of the UrbanRoof Applied AI Builder assignment. For questions about the implementation, contact [your email].*
+*Built as part of the UrbanRoof Applied AI Builder assignment. For questions about the implementation, contact [harshitasaraogi01@gmail.com].*
