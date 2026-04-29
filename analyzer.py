@@ -1,7 +1,5 @@
 """
-analyzer.py - DDR generation via OpenRouter (text-only LLM call)
-Images are extracted separately and placed in the HTML report by the renderer.
-This avoids all base64 image transmission issues with free models.
+analyzer.py - DDR generation via OpenRouter (text-only, with working fallback)
 """
 
 import json
@@ -10,27 +8,25 @@ import urllib.request
 import urllib.error
 from typing import Dict, List, Any
 
-# Priority-ordered list of free vision/text models on OpenRouter.
-# We try each in order until one succeeds.
 FREE_MODELS = [
     "qwen/qwen2.5-vl-32b-instruct:free",
     "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "google/gemma-3-27b-it:free",
     "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-27b-it:free",
     "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1-0528:free",
 ]
 
 
 def build_prompt(inspection_text: str, thermal_text: str) -> str:
-    return f"""You are an expert property inspection analyst. Generate a Detailed Diagnostic Report (DDR) by merging the two documents below.
+    return f"""You are a property inspection expert. Generate a Detailed Diagnostic Report (DDR) from the two documents below.
 
-STRICT RULES:
-- NEVER invent facts not in the documents
-- If data is missing write exactly: Not Available
-- If data conflicts between documents, mention the conflict explicitly
-- Use simple client-friendly language, avoid jargon
-- Do not duplicate observations across sections
-- Respond with ONLY a valid JSON object. No markdown, no code fences, no text before or after the JSON.
+RULES:
+- Only use facts present in the documents. Never invent data.
+- If data is missing, write exactly: Not Available
+- If data conflicts between documents, mention the conflict
+- Use simple, client-friendly language
+- Respond with ONLY a valid JSON object. No markdown. No code fences. No explanation. Start with {{ and end with }}.
 
 === INSPECTION REPORT ===
 {inspection_text[:7000]}
@@ -38,38 +34,38 @@ STRICT RULES:
 === THERMAL REPORT ===
 {thermal_text[:3500]}
 
-Generate this exact JSON structure (fill every field from the documents above):
+Return exactly this JSON structure with all fields filled from the documents:
 
 {{
   "report_metadata": {{
     "property_address": "full address or Not Available",
     "inspection_date": "date or Not Available",
-    "inspected_by": "name(s) or Not Available",
-    "property_type": "Flat/House/etc or Not Available",
+    "inspected_by": "name or Not Available",
+    "property_type": "Flat or House or Not Available",
     "floors": "number or Not Available",
-    "previous_structural_audit": "Yes/No or Not Available",
-    "previous_repairs": "Yes/No or Not Available",
+    "previous_structural_audit": "Yes or No or Not Available",
+    "previous_repairs": "Yes or No or Not Available",
     "thermal_device": "device name or Not Available",
     "thermal_date": "date or Not Available"
   }},
   "property_issue_summary": {{
-    "overview": "3-4 sentence plain-language summary of all main problems found",
+    "overview": "3-4 sentence plain-language summary of all main problems",
     "total_issues_found": 7,
-    "primary_concern": "the single most urgent issue in one sentence",
+    "primary_concern": "the single most urgent issue",
     "affected_areas": ["Hall", "Bedroom", "Master Bedroom", "Kitchen", "Parking Area", "Common Bathroom"]
   }},
   "area_observations": [
     {{
       "area_name": "Hall",
-      "negative_side": "exact damage or symptom observed on the affected side",
-      "positive_side": "exact finding on the source side",
-      "thermal_reading": "Hotspot X°C, Coldspot Y°C or Not Available",
-      "visual_description": "what the photos show for this area",
+      "negative_side": "damage or symptom observed",
+      "positive_side": "finding on source side",
+      "thermal_reading": "Hotspot X C, Coldspot Y C or Not Available",
+      "visual_description": "what photos show for this area",
       "severity": "High"
     }},
     {{
       "area_name": "Common Bedroom",
-      "negative_side": "exact damage observed",
+      "negative_side": "damage observed",
       "positive_side": "source finding",
       "thermal_reading": "temperatures or Not Available",
       "visual_description": "photo description",
@@ -77,7 +73,7 @@ Generate this exact JSON structure (fill every field from the documents above):
     }},
     {{
       "area_name": "Master Bedroom",
-      "negative_side": "exact damage observed",
+      "negative_side": "damage observed",
       "positive_side": "source finding",
       "thermal_reading": "temperatures or Not Available",
       "visual_description": "photo description",
@@ -85,7 +81,7 @@ Generate this exact JSON structure (fill every field from the documents above):
     }},
     {{
       "area_name": "Kitchen",
-      "negative_side": "exact damage observed",
+      "negative_side": "damage observed",
       "positive_side": "source finding",
       "thermal_reading": "temperatures or Not Available",
       "visual_description": "photo description",
@@ -93,7 +89,7 @@ Generate this exact JSON structure (fill every field from the documents above):
     }},
     {{
       "area_name": "Parking Area",
-      "negative_side": "exact damage observed",
+      "negative_side": "damage observed",
       "positive_side": "source finding",
       "thermal_reading": "temperatures or Not Available",
       "visual_description": "photo description",
@@ -101,7 +97,7 @@ Generate this exact JSON structure (fill every field from the documents above):
     }},
     {{
       "area_name": "Common Bathroom",
-      "negative_side": "exact damage observed",
+      "negative_side": "damage observed",
       "positive_side": "source finding",
       "thermal_reading": "temperatures or Not Available",
       "visual_description": "photo description",
@@ -110,44 +106,37 @@ Generate this exact JSON structure (fill every field from the documents above):
   ],
   "probable_root_causes": [
     {{
-      "cause": "detailed root cause description",
-      "affected_areas": ["list of areas"],
-      "evidence": "specific evidence from the documents"
+      "cause": "root cause description",
+      "affected_areas": ["area1", "area2"],
+      "evidence": "specific evidence from documents"
     }}
   ],
   "severity_assessment": {{
     "overall_severity": "High",
-    "reasoning": "plain-language explanation of why this overall severity was assigned",
+    "reasoning": "plain-language explanation",
     "items": [
       {{
-        "issue": "specific issue description",
+        "issue": "issue description",
         "severity": "High",
-        "reason": "why this severity level"
+        "reason": "reason for this severity"
       }}
     ]
   }},
   "recommended_actions": [
     {{
       "priority": "Immediate",
-      "action": "specific action to take",
+      "action": "specific action",
       "area": "which area",
-      "method": "specific method from documents or Not Available"
+      "method": "specific method or Not Available"
     }}
   ],
-  "additional_notes": [
-    "Any thermal reading that adds diagnostic context",
-    "Any conflict between inspection and thermal documents",
-    "Any observation that doesn't fit other sections"
-  ],
-  "missing_or_unclear_information": [
-    "Customer name: Not Available in documents",
-    "Property age: Not Available in documents"
-  ]
+  "additional_notes": ["note 1", "note 2"],
+  "missing_or_unclear_information": ["item 1", "item 2"]
 }}"""
 
 
-def _call_openrouter(api_key: str, model: str, prompt: str) -> str:
-    """Make a single text-only call to OpenRouter. Returns raw response text."""
+def _try_model(api_key: str, model: str, prompt: str) -> str:
+    """Call one model. Returns response text or raises exception."""
     payload = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -170,6 +159,10 @@ def _call_openrouter(api_key: str, model: str, prompt: str) -> str:
     with urllib.request.urlopen(req, timeout=120) as resp:
         result = json.loads(resp.read().decode("utf-8"))
 
+    # Check for API-level error inside a 200 response
+    if "error" in result:
+        raise ValueError(result["error"].get("message", "Unknown API error"))
+
     return result["choices"][0]["message"]["content"].strip()
 
 
@@ -182,28 +175,41 @@ def call_gemini(
     thermal_image_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Generate DDR JSON by calling OpenRouter with text only.
-    Images are NOT sent to the LLM — they are embedded in the HTML
-    report directly by the renderer (page-ordered, by area).
-    Returns parsed DDR JSON dict.
+    Generate DDR JSON via OpenRouter text-only call.
+    Tries multiple free models in order until one succeeds.
+    Images are embedded into the HTML report by the renderer directly.
     """
     prompt = build_prompt(inspection_text, thermal_text)
 
-    last_error = None
+    errors = []
+    raw = None
+
     for model in FREE_MODELS:
         try:
-            raw = _call_openrouter(api_key, model, prompt)
-            break
+            raw = _try_model(api_key, model, prompt)
+            # If we got a non-empty response, break
+            if raw and len(raw) > 50:
+                break
         except urllib.error.HTTPError as e:
-            last_error = f"Model {model} failed: {e.code} {e.read().decode('utf-8')[:200]}"
+            body = ""
+            try:
+                body = e.read().decode("utf-8")[:300]
+            except Exception:
+                pass
+            errors.append(f"{model}: HTTP {e.code} — {body}")
+            raw = None
             continue
         except Exception as e:
-            last_error = f"Model {model} failed: {str(e)}"
+            errors.append(f"{model}: {str(e)[:200]}")
+            raw = None
             continue
-    else:
-        raise ValueError(f"All free models failed. Last error: {last_error}")
 
-    # Strip markdown fences
+    if not raw:
+        raise ValueError(
+            f"All models failed. Errors:\n" + "\n".join(errors)
+        )
+
+    # Strip markdown fences if present
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
     raw = raw.strip()
@@ -211,9 +217,13 @@ def call_gemini(
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
+        # Try to extract JSON substring
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            try:
+                return json.loads(match.group())
+            except Exception:
+                pass
         raise ValueError(
-            f"Response was not valid JSON.\nError: {e}\nRaw (first 600 chars):\n{raw[:600]}"
+            f"Response not valid JSON.\nError: {e}\nFirst 600 chars:\n{raw[:600]}"
         )
