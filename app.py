@@ -120,10 +120,10 @@ with st.sidebar:
     
     st.markdown('<div class="step-label">Step 1 · API Key</div>', unsafe_allow_html=True)
     api_key = st.text_input(
-        "Gemini API Key",
+        "OpenRouter API Key",
         type="password",
-        placeholder="AIza...",
-        help="Get a free key at aistudio.google.com",
+        placeholder="sk-or-v1-...",
+        help="Get a free key at openrouter.ai - no credit card needed",
         label_visibility="collapsed",
     )
     
@@ -131,8 +131,8 @@ with st.sidebar:
         st.markdown("""
         <div class="info-box">
         🔑 <strong>Get a free key:</strong><br>
-        Visit <a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a> → 
-        Get API Key → Create API key
+        1. Go to <a href="https://openrouter.ai" target="_blank">openrouter.ai</a><br>2. Sign up → Avatar → Keys → Create Key<br>3. Key starts with sk-or-v1- 
+        Paste the key into this field
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -148,7 +148,7 @@ with st.sidebar:
     """)
     
     st.divider()
-    st.caption("Powered by Gemini 2.0 Flash · PyMuPDF · Streamlit")
+    st.caption("Powered by OpenRouter · Gemini 2.0 Flash (Free) · PyMuPDF · Streamlit")
 
 
 # ─────────────────────────────────────────────
