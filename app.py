@@ -245,8 +245,8 @@ if generate_btn and ready:
         
         # Combine: thermal first (higher priority), then inspection
         selected_all = selected_thermal_imgs + selected_inspection_imgs
-        # Hard cap at 25 images total for API limits
-        selected_all = selected_all[:25]
+        # Hard cap at 12 images total to stay within free tier limits
+        selected_all = selected_all[:12]
         
         selected_ids = {img["id"] for img in selected_all}
         st.caption(f"🖼️ {len(selected_all)} images selected for AI analysis (thermal: {len(selected_thermal_imgs)}, inspection: {len(selected_inspection_imgs)})")
