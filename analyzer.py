@@ -160,7 +160,7 @@ def call_gemini(
         })
 
     payload = {
-        "model": "google/gemini-2.0-flash-exp:free",
+        "model": "openrouter/free",
         "messages": [
             {"role": "user", "content": content}
         ],
