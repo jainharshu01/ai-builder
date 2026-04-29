@@ -104,8 +104,8 @@ def get_images_as_gemini_parts(images: List[Dict]) -> List[Dict]:
     # Prioritize larger images (more likely to be content photos vs decorators)
     sorted_images = sorted(images, key=lambda x: x["width"] * x["height"], reverse=True)
     
-    # Cap at 20 to avoid token overflow
-    selected = sorted_images[:20]
+    # Cap at 8 to stay within free-tier token limits
+    selected = sorted_images[:8]
     
     parts = []
     for img in selected:
