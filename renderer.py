@@ -249,635 +249,174 @@ def render_list_section(items: List) -> str:
 def render_ddr_html(ddr_data: Dict, image_map: Dict) -> str:
     """
     Render the full DDR as a self-contained HTML string.
+    Pre-computes all section HTML outside the main f-string to avoid
+    f-string brace escaping issues with nested dict defaults.
     """
-    meta = ddr_data.get("report_metadata", {})
-    generated_on = datetime.now().strftime("%B %d, %Y at %I:%M %p")
-    address = meta.get("property_address", "Property Inspection Report")
-    
+    meta          = ddr_data.get("report_metadata", {})
+    generated_on  = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+    address       = meta.get("property_address", "Property Inspection Report")
+
+    # Pre-compute every section — NO nested calls inside the big f-string
+    s_metadata    = render_metadata_section(meta)
+    s_summary     = render_issue_summary(ddr_data.get("property_issue_summary") or {})
+    s_areas       = render_area_observations(ddr_data.get("area_observations") or [], image_map)
+    s_causes      = render_root_causes(ddr_data.get("probable_root_causes") or [])
+    s_severity    = render_severity_assessment(ddr_data.get("severity_assessment") or {})
+    s_actions     = render_recommended_actions(ddr_data.get("recommended_actions") or [])
+    s_notes       = render_list_section(ddr_data.get("additional_notes") or [])
+    s_missing     = render_list_section(ddr_data.get("missing_or_unclear_information") or [])
+
+    # Header meta values
+    h_address     = meta.get("property_address", "Not Available")
+    h_date        = meta.get("inspection_date", "Not Available")
+    h_inspector   = meta.get("inspected_by", "Not Available")
+
     html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detailed Diagnostic Report – {address}</title>
+    <title>Detailed Diagnostic Report</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --ink: #0D0D0D;
-            --ink-light: #3D3D3D;
-            --ink-faint: #7A7A7A;
-            --paper: #FAFAF7;
-            --surface: #FFFFFF;
-            --border: #E5E5E0;
-            --accent: #C8A96E;
-            --accent-dark: #8B6914;
-            --section-num: #C8A96E;
-            --header-bg: #0D0D0D;
-            --header-fg: #FAFAF7;
+            --ink: #0D0D0D; --ink-light: #3D3D3D; --ink-faint: #7A7A7A;
+            --paper: #FAFAF7; --surface: #FFFFFF; --border: #E5E5E0;
+            --accent: #C8A96E; --accent-dark: #8B6914;
+            --header-bg: #0D0D0D; --header-fg: #FAFAF7;
         }}
-        
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-        
-        body {{
-            font-family: 'DM Sans', sans-serif;
-            background: var(--paper);
-            color: var(--ink);
-            font-size: 15px;
-            line-height: 1.65;
-        }}
-
-        /* ========= HEADER ========= */
-        .report-header {{
-            background: var(--header-bg);
-            color: var(--header-fg);
-            padding: 48px 64px 40px;
-            position: relative;
-            overflow: hidden;
-        }}
-        .report-header::before {{
-            content: '';
-            position: absolute;
-            top: -60px; right: -60px;
-            width: 280px; height: 280px;
-            border-radius: 50%;
-            border: 1px solid rgba(200, 169, 110, 0.2);
-        }}
-        .report-header::after {{
-            content: '';
-            position: absolute;
-            bottom: -80px; left: 40px;
-            width: 200px; height: 200px;
-            border-radius: 50%;
-            border: 1px solid rgba(200, 169, 110, 0.1);
-        }}
-        .header-label {{
-            font-family: 'DM Mono', monospace;
-            font-size: 11px;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            color: var(--accent);
-            margin-bottom: 12px;
-        }}
-        .header-title {{
-            font-family: 'DM Serif Display', serif;
-            font-size: 38px;
-            font-weight: 400;
-            line-height: 1.15;
-            max-width: 640px;
-            margin-bottom: 24px;
-        }}
-        .header-title em {{
-            color: var(--accent);
-            font-style: italic;
-        }}
-        .header-meta-row {{
-            display: flex;
-            gap: 32px;
-            flex-wrap: wrap;
-            margin-top: 8px;
-        }}
-        .header-meta-item {{
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }}
-        .header-meta-key {{
-            font-size: 10px;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            color: rgba(250,250,247,0.5);
-        }}
-        .header-meta-val {{
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--header-fg);
-        }}
-        .header-divider {{
-            height: 1px;
-            background: linear-gradient(90deg, var(--accent) 0%, transparent 60%);
-            margin: 28px 0 20px;
-        }}
-        .generated-stamp {{
-            font-size: 12px;
-            color: rgba(250,250,247,0.4);
-            font-family: 'DM Mono', monospace;
-        }}
-        
-        /* ========= LAYOUT ========= */
-        .report-body {{
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 0 32px 80px;
-        }}
-        
-        /* ========= SECTIONS ========= */
-        .report-section {{
-            margin-top: 56px;
-        }}
-        .section-header {{
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 2px solid var(--border);
-        }}
-        .section-num {{
-            font-family: 'DM Mono', monospace;
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--accent-dark);
-            background: #FDF5E6;
-            border: 1px solid var(--accent);
-            padding: 3px 8px;
-            border-radius: 3px;
-            letter-spacing: 0.1em;
-        }}
-        .section-title {{
-            font-family: 'DM Serif Display', serif;
-            font-size: 24px;
-            font-weight: 400;
-            color: var(--ink);
-        }}
-        
-        /* ========= META TABLE ========= */
-        .meta-table {{
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            overflow: hidden;
-        }}
+        body {{ font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(--ink); font-size: 15px; line-height: 1.65; }}
+        .report-header {{ background: var(--header-bg); color: var(--header-fg); padding: 48px 64px 40px; position: relative; overflow: hidden; }}
+        .report-header::before {{ content: ''; position: absolute; top: -60px; right: -60px; width: 280px; height: 280px; border-radius: 50%; border: 1px solid rgba(200,169,110,0.2); }}
+        .header-label {{ font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }}
+        .header-title {{ font-family: 'DM Serif Display', serif; font-size: 38px; font-weight: 400; line-height: 1.15; max-width: 640px; margin-bottom: 24px; }}
+        .header-title em {{ color: var(--accent); font-style: italic; }}
+        .header-meta-row {{ display: flex; gap: 32px; flex-wrap: wrap; margin-top: 8px; }}
+        .header-meta-item {{ display: flex; flex-direction: column; gap: 2px; }}
+        .header-meta-key {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: rgba(250,250,247,0.5); }}
+        .header-meta-val {{ font-size: 14px; font-weight: 500; color: var(--header-fg); }}
+        .header-divider {{ height: 1px; background: linear-gradient(90deg, var(--accent) 0%, transparent 60%); margin: 28px 0 20px; }}
+        .generated-stamp {{ font-size: 12px; color: rgba(250,250,247,0.4); font-family: 'DM Mono', monospace; }}
+        .report-body {{ max-width: 1100px; margin: 0 auto; padding: 0 32px 80px; }}
+        .report-section {{ margin-top: 56px; }}
+        .section-header {{ display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--border); }}
+        .section-num {{ font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500; color: var(--accent-dark); background: #FDF5E6; border: 1px solid var(--accent); padding: 3px 8px; border-radius: 3px; letter-spacing: 0.1em; }}
+        .section-title {{ font-family: 'DM Serif Display', serif; font-size: 24px; font-weight: 400; color: var(--ink); }}
+        .meta-table {{ width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
         .meta-table tr:nth-child(even) {{ background: #F7F7F4; }}
-        .meta-key {{
-            padding: 10px 16px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--ink-faint);
-            width: 240px;
-            border-right: 1px solid var(--border);
-        }}
-        .meta-val {{
-            padding: 10px 16px;
-            font-size: 14px;
-            color: var(--ink);
-        }}
-
-        /* ========= SUMMARY CARD ========= */
-        .summary-card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 28px;
-        }}
-        .summary-text {{
-            font-size: 16px;
-            line-height: 1.7;
-            color: var(--ink-light);
-            margin-bottom: 24px;
-        }}
-        .summary-stats {{
-            display: flex;
-            gap: 16px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }}
-        .stat-box {{
-            background: #F7F7F4;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px 20px;
-            min-width: 160px;
-        }}
-        .stat-num {{
-            font-family: 'DM Serif Display', serif;
-            font-size: 40px;
-            color: var(--accent-dark);
-            line-height: 1;
-        }}
-        .stat-label {{
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-faint);
-            margin-top: 4px;
-        }}
-        .primary-concern {{
-            flex: 1;
-        }}
-        .stat-concern {{
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--ink);
-            margin-top: 6px;
-        }}
-        .areas-wrap {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }}
-        .areas-label {{
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-faint);
-        }}
-        .tag {{
-            background: #F0EDE5;
-            border: 1px solid #D4C9B0;
-            color: var(--accent-dark);
-            font-size: 12px;
-            padding: 3px 10px;
-            border-radius: 100px;
-            font-weight: 500;
-        }}
-        
-        /* ========= BADGE ========= */
-        .badge {{
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            padding: 3px 10px;
-            border-radius: 4px;
-            white-space: nowrap;
-        }}
-
-        /* ========= AREA CARDS ========= */
-        .area-card {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 28px;
-            margin-bottom: 24px;
-        }}
-        .area-header {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 20px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid var(--border);
-        }}
-        .area-title {{
-            font-family: 'DM Serif Display', serif;
-            font-size: 20px;
-            font-weight: 400;
-        }}
-        .area-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 28px;
-            align-items: start;
-        }}
-        .obs-label {{
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-faint);
-            margin-top: 16px;
-            margin-bottom: 4px;
-        }}
+        .meta-key {{ padding: 10px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); width: 240px; border-right: 1px solid var(--border); }}
+        .meta-val {{ padding: 10px 16px; font-size: 14px; color: var(--ink); }}
+        .summary-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }}
+        .summary-text {{ font-size: 16px; line-height: 1.7; color: var(--ink-light); margin-bottom: 24px; }}
+        .summary-stats {{ display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }}
+        .stat-box {{ background: #F7F7F4; border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; min-width: 160px; }}
+        .stat-num {{ font-family: 'DM Serif Display', serif; font-size: 40px; color: var(--accent-dark); line-height: 1; }}
+        .stat-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-faint); margin-top: 4px; }}
+        .primary-concern {{ flex: 1; }}
+        .stat-concern {{ font-size: 15px; font-weight: 600; color: var(--ink); margin-top: 6px; }}
+        .areas-wrap {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+        .areas-label {{ font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-faint); }}
+        .tag {{ background: #F0EDE5; border: 1px solid #D4C9B0; color: var(--accent-dark); font-size: 12px; padding: 3px 10px; border-radius: 100px; font-weight: 500; }}
+        .badge {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; padding: 3px 10px; border-radius: 4px; white-space: nowrap; }}
+        .area-card {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-bottom: 24px; }}
+        .area-header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }}
+        .area-title {{ font-family: 'DM Serif Display', serif; font-size: 20px; font-weight: 400; }}
+        .area-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }}
+        .obs-label {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-faint); margin-top: 16px; margin-bottom: 4px; }}
         .obs-label:first-child {{ margin-top: 0; }}
-        .thermal-chip {{
-            font-family: 'DM Mono', monospace;
-            font-size: 13px;
-            background: #F0EEE8;
-            border: 1px solid var(--border);
-            padding: 6px 12px;
-            border-radius: 6px;
-            display: inline-block;
-        }}
-        
-        /* ========= IMAGES ========= */
-        .img-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }}
-        .report-figure {{
-            margin: 0;
-        }}
-        .report-figure img {{
-            width: 100%;
-            height: 180px;
-            object-fit: cover;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            display: block;
-        }}
-        .report-figure figcaption {{
-            font-size: 10px;
-            color: var(--ink-faint);
-            text-align: center;
-            margin-top: 4px;
-            font-family: 'DM Mono', monospace;
-        }}
-        .img-missing {{
-            background: #F7F7F4;
-            border: 1px dashed #C5C5C0;
-            border-radius: 6px;
-            padding: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: var(--ink-faint);
-            font-family: 'DM Mono', monospace;
-        }}
-        
-        /* ========= ROOT CAUSES ========= */
-        .cause-item {{
-            display: flex;
-            gap: 16px;
-            margin-bottom: 20px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 20px;
-        }}
-        .cause-num {{
-            width: 36px;
-            height: 36px;
-            background: var(--ink);
-            color: var(--header-fg);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'DM Serif Display', serif;
-            font-size: 16px;
-            flex-shrink: 0;
-        }}
+        .thermal-chip {{ font-family: 'DM Mono', monospace; font-size: 13px; background: #F0EEE8; border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; display: inline-block; }}
+        .img-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+        .report-figure {{ margin: 0; }}
+        .report-figure img {{ width: 100%; height: 180px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); display: block; }}
+        .report-figure figcaption {{ font-size: 10px; color: var(--ink-faint); text-align: center; margin-top: 4px; font-family: 'DM Mono', monospace; }}
+        .img-missing {{ background: #F7F7F4; border: 1px dashed #C5C5C0; border-radius: 6px; padding: 20px; text-align: center; font-size: 12px; color: var(--ink-faint); font-family: 'DM Mono', monospace; }}
+        .cause-item {{ display: flex; gap: 16px; margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }}
+        .cause-num {{ width: 36px; height: 36px; background: var(--ink); color: var(--header-fg); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'DM Serif Display', serif; font-size: 16px; flex-shrink: 0; }}
         .cause-body {{ flex: 1; }}
-        .cause-text {{
-            font-size: 15px;
-            font-weight: 500;
-            margin-bottom: 10px;
-            line-height: 1.5;
-        }}
-        .cause-meta {{
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            font-size: 13px;
-            color: var(--ink-light);
-        }}
-        
-        /* ========= SEVERITY ========= */
-        .sev-overall {{
-            font-size: 16px;
-            font-weight: 600;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-        .sev-reasoning {{
-            color: var(--ink-light);
-            margin-bottom: 20px;
-            line-height: 1.65;
-        }}
-        .sev-table {{
-            width: 100%;
-            border-collapse: collapse;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            overflow: hidden;
-        }}
-        .sev-table th {{
-            background: #F7F7F4;
-            padding: 10px 14px;
-            text-align: left;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-faint);
-            border-bottom: 1px solid var(--border);
-        }}
-        .sev-table td {{
-            padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
-            font-size: 14px;
-        }}
+        .cause-text {{ font-size: 15px; font-weight: 500; margin-bottom: 10px; line-height: 1.5; }}
+        .cause-meta {{ display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-light); }}
+        .sev-overall {{ font-size: 16px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }}
+        .sev-reasoning {{ color: var(--ink-light); margin-bottom: 20px; line-height: 1.65; }}
+        .sev-table {{ width: 100%; border-collapse: collapse; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
+        .sev-table th {{ background: #F7F7F4; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-faint); border-bottom: 1px solid var(--border); }}
+        .sev-table td {{ padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }}
         .sev-table tr:last-child td {{ border-bottom: none; }}
         .sev-table tr:nth-child(even) td {{ background: #FAFAF7; }}
-        
-        /* ========= ACTIONS ========= */
         .action-group {{ margin-bottom: 24px; }}
-        .action-group-header {{
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            padding: 8px 14px;
-            border-radius: 6px 6px 0 0;
-            margin-bottom: 0;
-        }}
-        .action-item {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-top: none;
-            padding: 16px 16px 16px 20px;
-        }}
+        .action-group-header {{ font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 14px; border-radius: 6px 6px 0 0; }}
+        .action-item {{ background: var(--surface); border: 1px solid var(--border); border-top: none; padding: 16px 16px 16px 20px; }}
         .action-item:last-child {{ border-radius: 0 0 6px 6px; }}
-        .action-area {{
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-faint);
-            margin-bottom: 4px;
-        }}
-        .action-text {{
-            font-size: 15px;
-            font-weight: 500;
-            margin-bottom: 4px;
-        }}
-        .action-method {{
-            font-size: 13px;
-            color: var(--ink-light);
-        }}
-        
-        /* ========= PLAIN LIST ========= */
-        .plain-list {{
-            list-style: none;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }}
-        .plain-list li {{
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 12px 16px;
-            font-size: 14px;
-            color: var(--ink-light);
-            position: relative;
-            padding-left: 28px;
-        }}
-        .plain-list li::before {{
-            content: '→';
-            position: absolute;
-            left: 12px;
-            color: var(--accent);
-            font-weight: 700;
-        }}
-        
-        /* ========= FOOTER ========= */
-        .report-footer {{
-            background: var(--ink);
-            color: rgba(250,250,247,0.5);
-            text-align: center;
-            padding: 28px 40px;
-            margin-top: 80px;
-            font-size: 12px;
-            font-family: 'DM Mono', monospace;
-            line-height: 1.8;
-        }}
-        .footer-brand {{
-            color: var(--accent);
-            font-size: 14px;
-            font-family: 'DM Serif Display', serif;
-            font-weight: 400;
-            margin-bottom: 4px;
-        }}
-        
-        /* ========= RESPONSIVE ========= */
+        .action-area {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-faint); margin-bottom: 4px; }}
+        .action-text {{ font-size: 15px; font-weight: 500; margin-bottom: 4px; }}
+        .action-method {{ font-size: 13px; color: var(--ink-light); }}
+        .plain-list {{ list-style: none; display: flex; flex-direction: column; gap: 10px; }}
+        .plain-list li {{ background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px 12px 28px; font-size: 14px; color: var(--ink-light); position: relative; }}
+        .plain-list li::before {{ content: "→"; position: absolute; left: 12px; color: var(--accent); font-weight: 700; }}
+        .report-footer {{ background: var(--ink); color: rgba(250,250,247,0.5); text-align: center; padding: 28px 40px; margin-top: 80px; font-size: 12px; font-family: 'DM Mono', monospace; line-height: 1.8; }}
+        .footer-brand {{ color: var(--accent); font-size: 14px; font-family: 'DM Serif Display', serif; font-weight: 400; margin-bottom: 4px; }}
         @media (max-width: 768px) {{
             .report-header {{ padding: 32px 24px; }}
             .header-title {{ font-size: 28px; }}
             .report-body {{ padding: 0 16px 60px; }}
             .area-grid {{ grid-template-columns: 1fr; }}
             .img-grid {{ grid-template-columns: 1fr; }}
-            .header-meta-row {{ gap: 16px; }}
         }}
     </style>
 </head>
 <body>
-
-<!-- ===== HEADER ===== -->
 <header class="report-header">
     <div class="header-label">UrbanRoof · Detailed Diagnostic Report</div>
-    <h1 class="header-title">
-        Property <em>Health</em><br>Diagnosis Report
-    </h1>
+    <h1 class="header-title">Property <em>Health</em><br>Diagnosis Report</h1>
     <div class="header-divider"></div>
     <div class="header-meta-row">
-        <div class="header-meta-item">
-            <span class="header-meta-key">Property</span>
-            <span class="header-meta-val">{meta.get("property_address", "Not Available")}</span>
-        </div>
-        <div class="header-meta-item">
-            <span class="header-meta-key">Inspection Date</span>
-            <span class="header-meta-val">{meta.get("inspection_date", "Not Available")}</span>
-        </div>
-        <div class="header-meta-item">
-            <span class="header-meta-key">Inspected By</span>
-            <span class="header-meta-val">{meta.get("inspected_by", "Not Available")}</span>
-        </div>
-        <div class="header-meta-item">
-            <span class="header-meta-key">Report Generated</span>
-            <span class="header-meta-val">{generated_on}</span>
-        </div>
+        <div class="header-meta-item"><span class="header-meta-key">Property</span><span class="header-meta-val">{h_address}</span></div>
+        <div class="header-meta-item"><span class="header-meta-key">Inspection Date</span><span class="header-meta-val">{h_date}</span></div>
+        <div class="header-meta-item"><span class="header-meta-key">Inspected By</span><span class="header-meta-val">{h_inspector}</span></div>
+        <div class="header-meta-item"><span class="header-meta-key">Report Generated</span><span class="header-meta-val">{generated_on}</span></div>
     </div>
-    <div style="margin-top:16px">
-        <span class="generated-stamp">AI-Assisted Analysis · For Internal Use Only</span>
-    </div>
+    <div style="margin-top:16px"><span class="generated-stamp">AI-Assisted Analysis · For Internal Use Only</span></div>
 </header>
-
-<!-- ===== BODY ===== -->
 <div class="report-body">
-
-    <!-- SECTION 0: Inspection Details -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">00</span>
-            <h2 class="section-title">Inspection Details</h2>
-        </div>
-        {render_metadata_section(meta)}
+        <div class="section-header"><span class="section-num">00</span><h2 class="section-title">Inspection Details</h2></div>
+        {s_metadata}
     </div>
-
-    <!-- SECTION 1: Property Issue Summary -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">01</span>
-            <h2 class="section-title">Property Issue Summary</h2>
-        </div>
-        {render_issue_summary(ddr_data.get("property_issue_summary", {{}}))}
+        <div class="section-header"><span class="section-num">01</span><h2 class="section-title">Property Issue Summary</h2></div>
+        {s_summary}
     </div>
-
-    <!-- SECTION 2: Area-wise Observations -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">02</span>
-            <h2 class="section-title">Area-wise Observations</h2>
-        </div>
-        {render_area_observations(ddr_data.get("area_observations", []), image_map)}
+        <div class="section-header"><span class="section-num">02</span><h2 class="section-title">Area-wise Observations</h2></div>
+        {s_areas}
     </div>
-
-    <!-- SECTION 3: Probable Root Cause -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">03</span>
-            <h2 class="section-title">Probable Root Cause</h2>
-        </div>
-        {render_root_causes(ddr_data.get("probable_root_causes", []))}
+        <div class="section-header"><span class="section-num">03</span><h2 class="section-title">Probable Root Cause</h2></div>
+        {s_causes}
     </div>
-
-    <!-- SECTION 4: Severity Assessment -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">04</span>
-            <h2 class="section-title">Severity Assessment</h2>
-        </div>
-        {render_severity_assessment(ddr_data.get("severity_assessment", {{}}))}
+        <div class="section-header"><span class="section-num">04</span><h2 class="section-title">Severity Assessment</h2></div>
+        {s_severity}
     </div>
-
-    <!-- SECTION 5: Recommended Actions -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">05</span>
-            <h2 class="section-title">Recommended Actions</h2>
-        </div>
-        {render_recommended_actions(ddr_data.get("recommended_actions", []))}
+        <div class="section-header"><span class="section-num">05</span><h2 class="section-title">Recommended Actions</h2></div>
+        {s_actions}
     </div>
-
-    <!-- SECTION 6: Additional Notes -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">06</span>
-            <h2 class="section-title">Additional Notes</h2>
-        </div>
-        {render_list_section(ddr_data.get("additional_notes", []))}
+        <div class="section-header"><span class="section-num">06</span><h2 class="section-title">Additional Notes</h2></div>
+        {s_notes}
     </div>
-
-    <!-- SECTION 7: Missing or Unclear Information -->
     <div class="report-section">
-        <div class="section-header">
-            <span class="section-num">07</span>
-            <h2 class="section-title">Missing or Unclear Information</h2>
-        </div>
-        {render_list_section(ddr_data.get("missing_or_unclear_information", []))}
+        <div class="section-header"><span class="section-num">07</span><h2 class="section-title">Missing or Unclear Information</h2></div>
+        {s_missing}
     </div>
-
-</div><!-- end report-body -->
-
-<!-- ===== FOOTER ===== -->
+</div>
 <footer class="report-footer">
     <div class="footer-brand">UrbanRoof Private Limited</div>
     <div>AI-assisted Detailed Diagnostic Report · Generated {generated_on}</div>
-    <div style="margin-top:6px;font-size:10px;">
-        This report is based on visual inspection data and thermal imaging provided. 
-        It is not an exhaustive structural audit. Consult a licensed engineer for critical structural decisions.
-    </div>
+    <div style="margin-top:6px;font-size:10px;">This report is based on visual inspection data and thermal imaging provided. It is not an exhaustive structural audit. Consult a licensed engineer for critical structural decisions.</div>
 </footer>
-
 </body>
 </html>'''
-    
     return html
