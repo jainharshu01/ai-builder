@@ -166,7 +166,6 @@ def call_gemini(
         "generationConfig": {
             "temperature": 0.1,
             "maxOutputTokens": 4096,
-            "responseMimeType": "application/json",
         }
     }).encode("utf-8")
 
