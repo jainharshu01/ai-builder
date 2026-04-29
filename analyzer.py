@@ -156,12 +156,12 @@ def call_gemini(
     thermal_image_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Call Gemini 2.0 Flash with multimodal input (text + images).
+    Call Gemini 1.5 Flash with multimodal input (text + images).
     Returns parsed DDR JSON dict.
     """
     configure_gemini(api_key)
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name="gemini-1.5-flash",
         system_instruction=build_system_prompt(),
     )
     
@@ -193,8 +193,8 @@ def call_gemini(
     response = model.generate_content(
         content_parts,
         generation_config={
-            "temperature": 0.1,   # Low temperature for factual accuracy
-            "max_output_tokens": 8192,
+            "temperature": 0.1,
+            "max_output_tokens": 4096,
         }
     )
     
