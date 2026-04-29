@@ -1,5 +1,7 @@
 """
-analyzer.py - DDR generation via OpenRouter (text-only, with working fallback)
+analyzer.py - DDR generation via Google Gemini API
+Requires a Google AI Studio API key with billing linked.
+Get one free at: aistudio.google.com
 """
 
 import json
@@ -7,15 +9,6 @@ import re
 import urllib.request
 import urllib.error
 from typing import Dict, List, Any
-
-FREE_MODELS = [
-    "qwen/qwen2.5-vl-32b-instruct:free",
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-r1-0528:free",
-]
 
 
 def build_prompt(inspection_text: str, thermal_text: str) -> str:
@@ -26,7 +19,7 @@ RULES:
 - If data is missing, write exactly: Not Available
 - If data conflicts between documents, mention the conflict
 - Use simple, client-friendly language
-- Respond with ONLY a valid JSON object. No markdown. No code fences. No explanation. Start with {{ and end with }}.
+- Respond with ONLY a valid JSON object. No markdown. No code fences. Start with {{ and end with }}.
 
 === INSPECTION REPORT ===
 {inspection_text[:7000]}
@@ -34,7 +27,7 @@ RULES:
 === THERMAL REPORT ===
 {thermal_text[:3500]}
 
-Return exactly this JSON structure with all fields filled from the documents:
+Return exactly this JSON structure:
 
 {{
   "report_metadata": {{
@@ -135,37 +128,6 @@ Return exactly this JSON structure with all fields filled from the documents:
 }}"""
 
 
-def _try_model(api_key: str, model: str, prompt: str) -> str:
-    """Call one model. Returns response text or raises exception."""
-    payload = json.dumps({
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4096,
-        "temperature": 0.1,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://urbanroof-ddr.streamlit.app",
-            "X-Title": "UrbanRoof DDR Generator",
-        },
-        method="POST",
-    )
-
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        result = json.loads(resp.read().decode("utf-8"))
-
-    # Check for API-level error inside a 200 response
-    if "error" in result:
-        raise ValueError(result["error"].get("message", "Unknown API error"))
-
-    return result["choices"][0]["message"]["content"].strip()
-
-
 def call_gemini(
     api_key: str,
     inspection_text: str,
@@ -175,39 +137,56 @@ def call_gemini(
     thermal_image_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Generate DDR JSON via OpenRouter text-only call.
-    Tries multiple free models in order until one succeeds.
-    Images are embedded into the HTML report by the renderer directly.
+    Call Google Gemini API directly via REST (no SDK dependency).
+    api_key: Google AI Studio API key (aistudio.google.com)
     """
     prompt = build_prompt(inspection_text, thermal_text)
 
-    errors = []
-    raw = None
+    payload = json.dumps({
+        "contents": [
+            {
+                "parts": [{"text": prompt}]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 4096,
+        }
+    }).encode("utf-8")
 
-    for model in FREE_MODELS:
+    # Try models in order - newer ones first
+    models = [
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+    ]
+
+    last_error = None
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         try:
-            raw = _try_model(api_key, model, prompt)
-            # If we got a non-empty response, break
-            if raw and len(raw) > 50:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+
+            raw = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if raw:
                 break
         except urllib.error.HTTPError as e:
-            body = ""
-            try:
-                body = e.read().decode("utf-8")[:300]
-            except Exception:
-                pass
-            errors.append(f"{model}: HTTP {e.code} — {body}")
-            raw = None
+            body = e.read().decode("utf-8")[:400]
+            last_error = f"{model}: HTTP {e.code} — {body}"
             continue
         except Exception as e:
-            errors.append(f"{model}: {str(e)[:200]}")
-            raw = None
+            last_error = f"{model}: {str(e)[:200]}"
             continue
-
-    if not raw:
-        raise ValueError(
-            f"All models failed. Errors:\n" + "\n".join(errors)
-        )
+    else:
+        raise ValueError(f"All Gemini models failed. Last error: {last_error}")
 
     # Strip markdown fences if present
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
@@ -217,7 +196,6 @@ def call_gemini(
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        # Try to extract JSON substring
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             try:
