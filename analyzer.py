@@ -12,10 +12,8 @@ from typing import Dict, List, Any
 # Current confirmed model names as of 2025/2026
 # Using v1 (stable) API endpoint, not v1beta
 MODELS = [
-    "gemini-2.5-flash-preview-05-20",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",   # Same price as 2.0-flash, not deprecated, supports thinking
+    "gemini-2.5-flash",        # Fallback: better quality, higher cost
 ]
 
 
@@ -31,10 +29,10 @@ RULES:
 - Your response must start with the character {{ and end with the character }}
 
 === INSPECTION REPORT ===
-{inspection_text[:7000]}
+{inspection_text}
 
 === THERMAL REPORT ===
-{thermal_text[:3500]}
+{thermal_text}
 
 Return exactly this JSON structure with every field populated from the documents above:
 
@@ -165,7 +163,8 @@ def call_gemini(
         ],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 512}
         }
     }).encode("utf-8")
 
