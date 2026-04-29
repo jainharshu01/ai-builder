@@ -120,9 +120,9 @@ with st.sidebar:
     
     st.markdown('<div class="step-label">Step 1 · API Key</div>', unsafe_allow_html=True)
     api_key = st.text_input(
-        "OpenRouter API Key",
+        "Google Gemini API Key",
         type="password",
-        placeholder="sk-or-v1-...",
+        placeholder="AIza...",
         help="Get a free key at openrouter.ai - no credit card needed",
         label_visibility="collapsed",
     )
