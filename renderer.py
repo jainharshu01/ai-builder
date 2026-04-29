@@ -83,23 +83,35 @@ def render_issue_summary(summary: Dict) -> str:
 def render_area_observations(observations: List[Dict], image_map: Dict) -> str:
     if not observations:
         return "<p>Not Available</p>"
-    
+
+    # Auto-distribute images by page order across areas
+    all_imgs = sorted(image_map.values(), key=lambda x: (x.get("source",""), x.get("page", 0)))
+    inspection_imgs = [img for img in all_imgs if img.get("source") == "Inspection Report"]
+    thermal_imgs   = [img for img in all_imgs if img.get("source") == "Thermal Report"]
+    n = max(len(observations), 1)
+    insp_per  = max(1, len(inspection_imgs) // n)
+    therm_per = max(1, len(thermal_imgs)    // n)
+
     parts = []
     for i, obs in enumerate(observations):
         area = obs.get("area_name", f"Area {i+1}")
         severity = obs.get("severity", "Medium")
         badge = severity_badge(severity)
-        
-        # Images for this area
-        assigned = obs.get("assigned_images", [])
+
+        area_insp  = inspection_imgs[i * insp_per  : i * insp_per  + insp_per]
+        area_therm = thermal_imgs   [i * therm_per : i * therm_per + therm_per]
+        area_imgs  = area_therm + area_insp  # thermal first
+
         img_html = ""
-        if assigned:
+        if area_imgs:
             img_html = '<div class="img-grid">' + "".join(
-                get_image_tag(img_id, image_map) for img_id in assigned
+                get_image_tag(img["id"], image_map,
+                              f"{img.get('source','')}, p.{img.get('page','')}")
+                for img in area_imgs
             ) + '</div>'
         else:
             img_html = '<div class="img-missing">Image Not Available</div>'
-        
+
         thermal = obs.get("thermal_reading", "Not Available")
         
         parts.append(f'''
