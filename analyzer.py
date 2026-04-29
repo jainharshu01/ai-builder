@@ -1,12 +1,14 @@
 """
-analyzer.py - Send extracted content to Gemini for DDR generation
-Uses the new google-genai SDK (google-genai package)
+analyzer.py - Send extracted content to an LLM for DDR generation
+Uses OpenRouter API (free $1 credit on signup, no card needed)
+Compatible with any OpenAI-format API
 """
 
-from google import genai
-from google.genai import types
 import json
 import re
+import base64
+import urllib.request
+import urllib.error
 from typing import Dict, List, Any
 
 
@@ -14,18 +16,16 @@ def build_system_prompt() -> str:
     return """You are an expert property inspection analyst at UrbanRoof, a building diagnostics company.
 You specialize in generating Detailed Diagnostic Reports (DDR) by analyzing inspection data and thermal imaging.
 
-Your task is to read inspection reports and thermal imaging data, then generate a structured, client-friendly DDR.
-
 STRICT RULES:
 1. NEVER invent facts not present in the documents
 2. If information conflicts between sources, explicitly mention the conflict
 3. If information is missing, write "Not Available"
-4. Use simple, client-friendly language - avoid unnecessary jargon
-5. Avoid duplicating the same observation in multiple places
-6. Assign images to the most relevant section based on what is visually depicted
+4. Use simple, client-friendly language - avoid jargon
+5. Avoid duplicating observations
 
-You must respond ONLY with a valid JSON object - no markdown, no code fences, no preamble, no explanation.
+You must respond ONLY with a valid JSON object.
 Start your response with { and end with }.
+No markdown, no code fences, no explanation outside the JSON.
 """
 
 
@@ -35,38 +35,31 @@ def build_user_prompt(
     inspection_images: List[Dict],
     thermal_images: List[Dict],
 ) -> str:
-
     insp_img_refs = "\n".join(
-        [f"  - {img['id']}: Page {img['page']} of Inspection Report ({img['width']}x{img['height']}px)"
+        [f"  - {img['id']}: Page {img['page']} of Inspection Report"
          for img in inspection_images]
     ) or "  None"
 
     thermal_img_refs = "\n".join(
-        [f"  - {img['id']}: Page {img['page']} of Thermal Report ({img['width']}x{img['height']}px)"
+        [f"  - {img['id']}: Page {img['page']} of Thermal Report"
          for img in thermal_images]
     ) or "  None"
 
-    return f"""You have been provided with:
-1. TEXT from an Inspection Report
-2. TEXT from a Thermal Imaging Report
-3. IMAGES from both reports (their IDs are listed below)
+    return f"""You have inspection and thermal report data. Generate a complete DDR.
 
 === INSPECTION REPORT TEXT ===
-{inspection_text[:8000]}
+{inspection_text[:6000]}
 
 === THERMAL REPORT TEXT ===
-{thermal_text[:4000]}
+{thermal_text[:3000]}
 
-=== INSPECTION REPORT IMAGE IDs ===
+=== INSPECTION IMAGE IDs ===
 {insp_img_refs}
 
-=== THERMAL REPORT IMAGE IDs ===
+=== THERMAL IMAGE IDs ===
 {thermal_img_refs}
 
-=== YOUR TASK ===
-Generate a complete Detailed Diagnostic Report (DDR) merging both documents.
-
-Respond with ONLY a JSON object in this EXACT structure:
+Respond with ONLY this JSON structure (no markdown, no code fences):
 
 {{
   "report_metadata": {{
@@ -81,7 +74,7 @@ Respond with ONLY a JSON object in this EXACT structure:
     "thermal_date": "extracted or Not Available"
   }},
   "property_issue_summary": {{
-    "overview": "2-4 sentence plain-language summary of the main problems found",
+    "overview": "2-4 sentence plain-language summary",
     "total_issues_found": 7,
     "primary_concern": "the single most critical issue",
     "affected_areas": ["Hall", "Bedroom", "Master Bedroom", "Kitchen", "Parking", "Common Bathroom"]
@@ -89,54 +82,45 @@ Respond with ONLY a JSON object in this EXACT structure:
   "area_observations": [
     {{
       "area_name": "Hall",
-      "negative_side": "What damage or symptom is visible on the affected side",
-      "positive_side": "What was found on the source side",
-      "thermal_reading": "Hotspot and coldspot temperatures if available, else Not Available",
-      "visual_description": "What is visible in the photos for this area",
-      "assigned_images": ["img_0", "img_1"],
+      "negative_side": "damage or symptom observed",
+      "positive_side": "source found on positive side",
+      "thermal_reading": "temperatures or Not Available",
+      "visual_description": "what is visible in photos",
+      "assigned_images": ["img_0"],
       "severity": "High"
     }}
   ],
   "probable_root_causes": [
     {{
-      "cause": "Description of root cause",
+      "cause": "root cause description",
       "affected_areas": ["Hall", "Bedroom"],
-      "evidence": "What evidence from the reports supports this"
+      "evidence": "evidence from the documents"
     }}
   ],
   "severity_assessment": {{
     "overall_severity": "High",
-    "reasoning": "Plain-language explanation of the overall severity rating",
+    "reasoning": "plain-language explanation",
     "items": [
       {{
-        "issue": "Issue description",
+        "issue": "issue description",
         "severity": "High",
-        "reason": "Why this severity was assigned"
+        "reason": "reason for this severity"
       }}
     ]
   }},
   "recommended_actions": [
     {{
       "priority": "Immediate",
-      "action": "What to do",
-      "area": "Where",
-      "method": "How, if described in the documents"
+      "action": "what to do",
+      "area": "where",
+      "method": "how, from documents or Not Available"
     }}
   ],
-  "additional_notes": [
-    "Any important observation not covered above",
-    "Any conflicts between the two documents"
-  ],
-  "missing_or_unclear_information": [
-    "Anything expected but not found in the documents"
-  ]
+  "additional_notes": ["note 1", "note 2"],
+  "missing_or_unclear_information": ["item 1"]
 }}
 
-RULES for assigned_images:
-- Only use image IDs from the lists above
-- Assign each image to the ONE area it best matches visually
-- Do not assign the same image to multiple areas
-- If unsure where an image belongs, leave it out
+For assigned_images: only use IDs from the lists above. Assign each image to one area only.
 """
 
 
@@ -149,11 +133,10 @@ def call_gemini(
     thermal_image_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Call Gemini using the new google-genai SDK.
-    Returns parsed DDR JSON dict.
+    Call OpenRouter API with vision support.
+    api_key should be your OpenRouter API key (from openrouter.ai).
+    Uses google/gemini-2.0-flash-exp:free - genuinely free, no billing needed.
     """
-    client = genai.Client(api_key=api_key)
-
     inspection_images = [img for img in all_images if img["id"] in inspection_image_ids]
     thermal_images = [img for img in all_images if img["id"] in thermal_image_ids]
 
@@ -164,32 +147,52 @@ def call_gemini(
         thermal_images=thermal_images,
     )
 
-    # Build parts: combined prompt text first, then all images
-    parts = [types.Part(text=build_system_prompt() + "\n\n" + prompt_text)]
+    # Build message content - text first, then images
+    content = [{"type": "text", "text": build_system_prompt() + "\n\n" + prompt_text}]
+
+    # Add images in OpenAI vision format
     for img in all_images:
-        parts.append(
-            types.Part(
-                inline_data=types.Blob(
-                    mime_type=img["mime"],
-                    data=img["b64"],
-                )
-            )
-        )
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{img['mime']};base64,{img['b64']}"
+            }
+        })
 
-    contents = [types.Content(role="user", parts=parts)]
+    payload = {
+        "model": "google/gemini-2.0-flash-exp:free",
+        "messages": [
+            {"role": "user", "content": content}
+        ],
+        "max_tokens": 4096,
+        "temperature": 0.1,
+    }
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-lite",
-        contents=contents,
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=4096,
-        ),
+    payload_bytes = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=payload_bytes,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://urbanroof-ddr.streamlit.app",
+            "X-Title": "UrbanRoof DDR Generator",
+        },
+        method="POST",
     )
 
-    raw_text = response.text.strip()
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        raise ValueError(f"OpenRouter API error {e.code}: {error_body}")
 
-    # Strip markdown fences if model added them anyway
+    # Extract text from response
+    raw_text = result["choices"][0]["message"]["content"].strip()
+
+    # Strip markdown fences if present
     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
     raw_text = re.sub(r"\s*```$", "", raw_text)
     raw_text = raw_text.strip()
@@ -201,5 +204,5 @@ def call_gemini(
         if match:
             return json.loads(match.group())
         raise ValueError(
-            f"Gemini response was not valid JSON.\n\nError: {e}\n\nRaw response (first 500 chars):\n{raw_text[:500]}"
+            f"Response was not valid JSON.\n\nError: {e}\n\nRaw (first 500 chars):\n{raw_text[:500]}"
         )
